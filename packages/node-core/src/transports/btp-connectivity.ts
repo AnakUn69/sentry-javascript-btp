@@ -1,5 +1,5 @@
+import type { IncomingMessage } from 'node:http';
 import * as https from 'node:https';
-import { IncomingMessage } from 'node:http';
 
 // Cache for the JWT token
 let cachedToken: string | null = null;
@@ -23,14 +23,17 @@ function getConnectivityCredentials(): ConnectivityCredentials | null {
 
   try {
     const services = JSON.parse(process.env.VCAP_SERVICES);
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     const connectivityService = services.connectivity?.[0];
 
-    if (!connectivityService) {
+    // eslint-disable-next-line @typescript-eslint/prefer-optional-chain, @typescript-eslint/no-unsafe-member-access
+    if (!connectivityService || !connectivityService.credentials) {
       return null;
     }
 
     const { clientid, clientsecret, url, onpremise_proxy_host, onpremise_proxy_port } =
-      connectivityService;
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      connectivityService.credentials;
 
     // console.log('DEBUG: creds extracted', { clientid, url, onpremise_proxy_host });
 
@@ -53,6 +56,7 @@ function getConnectivityCredentials(): ConnectivityCredentials | null {
  * Handles caching and token expiration.
  */
 export async function getConnectivityToken(): Promise<string | null> {
+  // eslint-disable-next-line @sentry-internal/sdk/no-unsafe-random-apis
   const now = Date.now();
 
   // Return cached token if it's still valid (with 30s buffer)
@@ -88,8 +92,10 @@ export async function getConnectivityToken(): Promise<string | null> {
           if (res.statusCode === 200) {
             try {
               const response = JSON.parse(data);
+              // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
               cachedToken = response.access_token;
               // expires_in is in seconds
+              // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
               tokenExpiry = now + response.expires_in * 1000;
               resolve(cachedToken);
             } catch (e) {

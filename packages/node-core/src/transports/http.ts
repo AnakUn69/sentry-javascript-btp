@@ -11,8 +11,8 @@ import type {
 } from '@sentry/core';
 import { consoleSandbox, createTransport, suppressTracing } from '@sentry/core';
 import { HttpsProxyAgent } from '../proxy';
-import type { HTTPModule } from './http-module';
 import * as btpConnectivity from './btp-connectivity';
+import type { HTTPModule } from './http-module';
 
 export interface NodeTransportOptions extends BaseTransportOptions {
   /** Set a proxy that should be used for outbound requests. */
