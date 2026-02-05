@@ -12,6 +12,7 @@ import type {
 import { consoleSandbox, createTransport, suppressTracing } from '@sentry/core';
 import { HttpsProxyAgent } from '../proxy';
 import type { HTTPModule } from './http-module';
+import * as btpConnectivity from './btp-connectivity';
 
 export interface NodeTransportOptions extends BaseTransportOptions {
   /** Set a proxy that should be used for outbound requests. */
@@ -22,6 +23,8 @@ export interface NodeTransportOptions extends BaseTransportOptions {
   httpModule?: HTTPModule;
   /** Allow overriding connection keepAlive, defaults to false */
   keepAlive?: boolean;
+  /** Allow using SAP BTP Connectivity service for outbound requests. */
+  usingCF?: boolean;
 }
 
 // Estimated maximum size for reasonable standalone event
@@ -126,20 +129,44 @@ function createRequestExecutor(
         }
 
         const hostnameIsIPv6 = hostname.startsWith('[');
+        const originalHostname = hostnameIsIPv6 ? hostname.slice(1, -1) : hostname;
 
-        const req = httpModule.request(
-          {
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        (async () => {
+          let requestOptions: http.RequestOptions | https.RequestOptions = {
             method: 'POST',
             agent,
             headers,
-            // Remove "[" and "]" from IPv6 hostnames
-            hostname: hostnameIsIPv6 ? hostname.slice(1, -1) : hostname,
+            hostname: originalHostname,
             path: `${pathname}${search}`,
             port,
             protocol,
             ca: options.caCerts,
-          },
-          res => {
+          };
+
+          if (options.usingCF) {
+            const btpProxy = btpConnectivity.getBtpProxySettings();
+            if (btpProxy) {
+              const token = await btpConnectivity.getConnectivityToken();
+              if (token) {
+                headers['Proxy-Authorization'] = `Bearer ${token}`;
+                if (process.env.SCC_LOCATION_ID) {
+                  headers['SAP-Connectivity-SCC-Location_ID'] = process.env.SCC_LOCATION_ID;
+                }
+
+                requestOptions = {
+                  ...requestOptions,
+                  agent: undefined, // Do not use the standard proxy agent
+                  hostname: btpProxy.host,
+                  port: btpProxy.port,
+                  path: options.url, // Absolute URL for forward proxy
+                  protocol: 'http:', // Proxy is HTTP
+                };
+              }
+            }
+          }
+
+          const req = httpModule.request(requestOptions, res => {
             res.on('data', () => {
               // Drain socket
             });
@@ -164,11 +191,11 @@ function createRequestExecutor(
                   : rateLimitsHeader,
               },
             });
-          },
-        );
+          });
 
-        req.on('error', reject);
-        body.pipe(req);
+          req.on('error', reject);
+          body.pipe(req);
+        })();
       });
     });
   };
